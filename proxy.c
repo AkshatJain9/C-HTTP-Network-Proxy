@@ -58,6 +58,8 @@ int main(int argc, char **argv)
 
     char toSend[MAXLINE];
 
+    char toReceive[MAXLINE];
+
 
     while (1) {
         // Accepting listening -> connfd would be passed into echo
@@ -127,13 +129,14 @@ int main(int argc, char **argv)
                     
 
         // // Read from tiny using CLIENT syntax
-        // while (Rio_readlineb(&trio, tbuf, MAXLINE)) {
-        //     printf(tbuf);
-        // }
+        while (Rio_readlineb(&trio, tbuf, MAXLINE)) {
+            strcat(toReceive, tbuf);
+        }
 
+        // printf(toReceive);
         
+        Rio_writen(connfd, toReceive, MAXLINE);
 
-        // printf("Should have printed something \n");
 
         // nt = Rio_readlineb(&trio, tbuf, MAXLINE);
 
