@@ -13,6 +13,15 @@ static const char *host = "Host: localhost:29723\r\n";
 static const char *get_hdr_n = "GET ";
 static const char *http_prot_hdr = " HTTP/1.0\r\n";
 
+// static int tinyClientFd;
+static char* tinyPortString;
+void* handleRequest(void* vargp);
+int isGet(char* buf);
+int isHost(char* buf);
+int isUsrAgent(char* buf);
+int isConn(char* buf);
+int isProxConn(char* buf);
+
 // Generated Port 29722 for proxy 29723 for tiny
 int main(int argc, char **argv)
 {
@@ -28,133 +37,129 @@ int main(int argc, char **argv)
     // Convert String port to Tiny Port to Listen to
     int tinyPort = atoi(port) + 1;
     int length = snprintf(NULL, 0, "%d", tinyPort);
-    char* tinyPortString = malloc(length + 1);
+    tinyPortString = malloc(length + 1);
     snprintf(tinyPortString, length + 1, "%d", tinyPort);
 
     // Open listening instance to port
     int listenfd = Open_listenfd(port);
 
     // Act as a client to tiny
-    int tinyClientFd = Open_clientfd("localhost", tinyPortString);// to send to client
 
     // For a specific client, we store connfd and store info in addr
-    int connfd;
-    struct sockaddr_storage clientaddr;
-
-    // We need to store how long their message is as well as the actual message
-    char buf[MAXLINE];
-    // Read from connfd as buffer
-    rio_t rio;
-
-    // For reading response from tiny
-    char tbuf[MAXLINE];
-    rio_t trio;
-
-    Rio_readinitb(&trio, tinyClientFd);
+    int* connfd;
     
+    // We also need a thread variable to pass around
+    pthread_t tid;
+
+    struct sockaddr_storage clientaddr;
     int clientlen = sizeof(struct sockaddr_storage);
 
-
-    char toSend[MAXLINE];
-
-    char toReceive[MAXLINE];
-
-
     while (1) {
-        memset(toSend, 0, MAXLINE);
-        memset(toReceive, 0, MAXLINE);
-
         // Accepting listening -> connfd would be passed into echo
-        connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
+        connfd = malloc(sizeof(int));
+        *connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
 
-        printf("Got a new client\n");
-
-        // Associate rio struct with server listener
-        Rio_readinitb(&rio, connfd);
-
-        Rio_readlineb(&rio, buf, MAXLINE);
-        printf(buf);
-        strcat(toSend, get_hdr_n);
-
-        int slashCount = 0;
-
-        int i = 0;
-        int start;
-        int end;
-
-        while (buf[i]) {
-            if (buf[i] == ' ' && slashCount == 3) {
-                end = i;
-                printf("%i\n", i);
-                break;
-            }
-
-            if (buf[i] == '/') {
-                slashCount++;
-                if (slashCount == 3) {
-                    start = i;
-                    printf("%i\n", i);
-                }
-            }
-            i++;
-        }
-
-        // printf(start);
-        char* reso = malloc(end - start + 1);
-        memset(reso, 0, end-start+1);
-
-        memcpy(reso, &buf[start], end-start);
-
-        strcat(toSend, reso);
-        strcat(toSend, http_prot_hdr);
-
-        strcat(toSend, host);
-        strcat(toSend, user_agent_hdr);
-        strcat(toSend, conn_hdr);
-        strcat(toSend, prox_conn_hdr);
-        
-
-        // Loads data into buffer AS SERVER
-        while((Rio_readlineb(&rio, buf, MAXLINE)) > 2) {
-            if (!isHost(buf) && !isUsrAgent(buf) && !isConn(buf) && !isProxConn(buf)) {
-                strcat(toSend, buf);
-            }
-        }
-        
-        strcat(toSend, "\r\n");
-
-        printf("Sending the following\n");
-        printf(toSend);
-        
-        // Write to tiny using CLIENT syntax
-        Rio_writen(tinyClientFd, toSend, MAXLINE);
-
-        printf("Message was sent! \n");
-                    
-
-        // // Read from tiny using CLIENT syntax
-        while (Rio_readlineb(&trio, tbuf, MAXLINE)) {
-            strcat(toReceive, tbuf);
-        }
-        
-        Rio_writen(connfd, toReceive, MAXLINE);
-        Close(connfd);
+        Pthread_create(&tid, NULL, handleRequest, connfd);
     }
 
-    printf("Exiting Proxy\n");
-    Close(tinyClientFd);
+    
     return 0;
 }
 
 
-void* handleReques(void* vargp) {
+void* handleRequest(void* vargp) {
+    printf("Handling a new client\n");
+
     int connfd = *((int*) vargp);
+    int tinyClientFd = Open_clientfd("localhost", tinyPortString);// to send to client
     Pthread_detach(pthread_self());
     Free(vargp);
 
+    char buf[MAXLINE] = "";
+    char tbuf[MAXLINE] = "";
+    char toSend[MAXLINE] = "";
+    char toReceive[MAXLINE] = "";
+
+    // For reading request from client
+    rio_t rio = {};
+    Rio_readinitb(&rio, connfd);
+
+    // For reading response from tiny
+    rio_t trio = {};
+    Rio_readinitb(&trio, tinyClientFd);
 
 
+    Rio_readlineb(&rio, buf, MAXLINE);
+    strcat(toSend, get_hdr_n);
 
+    int slashCount = 0;
+
+    int i = 0;
+    int start;
+    int end;
+
+    while (buf[i]) {
+        if (buf[i] == ' ' && slashCount == 3) {
+            end = i;
+            break;
+        }
+
+        if (buf[i] == '/') {
+            slashCount++;
+            if (slashCount == 3) {
+                start = i;
+            }
+        }
+        i++;
+    }
+
+    char* reso = malloc(end - start + 1);
+    memset(reso, 0, end-start+1);
+
+    memcpy(reso, &buf[start], end-start);
+
+    strcat(toSend, reso);
+
+    Free(reso);
+
+    strcat(toSend, http_prot_hdr);
+
+    strcat(toSend, host);
+    strcat(toSend, user_agent_hdr);
+    strcat(toSend, conn_hdr);
+    strcat(toSend, prox_conn_hdr);
+
+    // Loads data into buffer AS SERVER
+    while((Rio_readlineb(&rio, buf, MAXLINE)) > 2) {
+        if (!isHost(buf) && !isUsrAgent(buf) && !isConn(buf) && !isProxConn(buf)) {
+            strcat(toSend, buf);
+        }
+    }
+    
+    strcat(toSend, "\r\n");
+
+    printf("Sending the following\n");
+    printf(toSend);
+    
+    // Write to tiny using CLIENT syntax
+    Rio_writen(tinyClientFd, toSend, MAXLINE);
+
+    printf("Message was sent! \n");
+
+        // // Read from tiny using CLIENT syntax
+    while (Rio_readlineb(&trio, tbuf, MAXLINE)) {
+        strcat(toReceive, tbuf);
+    }
+
+    printf("Got back the following: \n");
+    printf(toReceive);
+    
+    Rio_writen(connfd, toReceive, MAXLINE);
+
+    Close(connfd);
+    Close(tinyClientFd);
+    printf("---------------------------------------------\n");
+    return NULL;
 }
 
 int isGet(char* buf) {
