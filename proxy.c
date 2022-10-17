@@ -42,7 +42,6 @@ int main(int argc, char **argv)
     struct sockaddr_storage clientaddr;
 
     // We need to store how long their message is as well as the actual message
-    int n; 
     char buf[MAXLINE];
     // Read from connfd as buffer
     rio_t rio;
@@ -62,8 +61,13 @@ int main(int argc, char **argv)
 
 
     while (1) {
+        memset(toSend, 0, MAXLINE);
+        memset(toReceive, 0, MAXLINE);
+
         // Accepting listening -> connfd would be passed into echo
         connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
+
+        printf("Got a new client\n");
 
         // Associate rio struct with server listener
         Rio_readinitb(&rio, connfd);
@@ -111,7 +115,7 @@ int main(int argc, char **argv)
         
 
         // Loads data into buffer AS SERVER
-        while((n = Rio_readlineb(&rio, buf, MAXLINE)) > 2) {
+        while((Rio_readlineb(&rio, buf, MAXLINE)) > 2) {
             if (!isHost(buf) && !isUsrAgent(buf) && !isConn(buf) && !isProxConn(buf)) {
                 strcat(toSend, buf);
             }
@@ -132,21 +136,25 @@ int main(int argc, char **argv)
         while (Rio_readlineb(&trio, tbuf, MAXLINE)) {
             strcat(toReceive, tbuf);
         }
-
-        // printf(toReceive);
         
         Rio_writen(connfd, toReceive, MAXLINE);
-
-
-        // nt = Rio_readlineb(&trio, tbuf, MAXLINE);
-
-        // Rio_writen(connfd, tbuf, nt);
-
+        Close(connfd);
     }
 
     printf("Exiting Proxy\n");
     Close(tinyClientFd);
     return 0;
+}
+
+
+void* handleReques(void* vargp) {
+    int connfd = *((int*) vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+
+
+
+
 }
 
 int isGet(char* buf) {
@@ -173,7 +181,3 @@ int isProxConn(char* buf) {
     && buf[11] == 'c' && buf[12] == 't' && buf[13] == 'i' && buf[14] == 'o' && buf[15] == 'n';
 }
 
-void getRes(char* buf, char* toSend) {
-    
-
-}
