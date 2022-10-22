@@ -1,22 +1,14 @@
 #include <stdio.h>
 #include "csapp.h"
+#include "cache.h"
 
-/* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
-#define MAX_OBJECT_SIZE 102400
+
 
 // Storing All settings that we know that we have to send
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
-static const char *conn_hdr = "Connection: close\r\n";
-static const char *prox_conn_hdr = "Proxy-Connection: close\r\n";
-static const char *host = "Host: localhost:29723\r\n";
-
-// Because GET req. from Proxy to Server is consistent, we will store prefix & suffix
-static const char *get_hdr_n = "GET ";
-static const char *http_prot_hdr = " HTTP/1.0\r\n";
-
 
 static char* tinyPortString;
+
 void* handleRequest(void* vargp);
 int isHost(char* clientBuffer);
 int isUsrAgent(char* clientBuffer);
@@ -35,7 +27,7 @@ int main(int argc, char **argv)
 
     // Capture port as String as well as replacement policy, 1 for LRU, 0 for LFU
     char* port = argv[1];
-    int replacement_policy = (argv[2][1] == 'R');
+    replacement_policy = (argv[2][1] == 'R');
 
     // Convert String port to Tiny Port to Listen to
     int tinyPort = atoi(port) + 1;
@@ -46,8 +38,8 @@ int main(int argc, char **argv)
     // Open listening instance to port
     int listenfd = Open_listenfd(port);
 
-    // For a specific client, we store connfd and store info in addr
-    int* connfd;
+    // For a specific client, we store clientConnfd and store info in addr
+    int* clientConnfd;
     struct sockaddr_storage clientaddr;
     unsigned int clientlen = sizeof(struct sockaddr_storage);
     
@@ -56,10 +48,10 @@ int main(int argc, char **argv)
 
     while (1) {
         // Accepting listening
-        connfd = malloc(sizeof(int));
-        *connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
+        clientConnfd = malloc(sizeof(int));
+        *clientConnfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
 
-        Pthread_create(&tid, NULL, handleRequest, connfd);
+        Pthread_create(&tid, NULL, handleRequest, clientConnfd);
     }
     
     return 0;
@@ -68,8 +60,7 @@ int main(int argc, char **argv)
 
 void* handleRequest(void* vargp) {
     // Create connections and detach from main thread
-    int connfd = *((int*) vargp);
-    int tinyClientFd = Open_clientfd("localhost", tinyPortString);// to send to client
+    int clientConnfd = *((int*) vargp);
     Pthread_detach(pthread_self());
     Free(vargp);
 
@@ -81,91 +72,138 @@ void* handleRequest(void* vargp) {
 
     // For reading request from client
     rio_t rio = {};
-    Rio_readinitb(&rio, connfd);
+    Rio_readinitb(&rio, clientConnfd);
+
+    char host[MAXLINE] = "";
+    char resourceToRequest[MAXLINE] = "";
+    char HTTPMethod[MAXLINE] = "";
+    char URL[MAXLINE] = "";
+
+    char* oldHttp;
+    int firstLine = 1;
+
+    char* potentialCache;
+
+    while ((Rio_readlineb(&rio, clientBuffer, MAXLINE)) > 2) {
+        if (firstLine) {
+            // printf(clientBuffer);
+            // printf("\n");
+            sscanf(clientBuffer, "%s %s", HTTPMethod, URL);
+            sscanf(URL, "http://%s", host);
+
+            if (findResource(host, clientToReceive)) {
+                // printf("Returning here\n");
+
+                // printf("CP-1?\n");
+                // printf(potentialCache);
+                // // printf(findResource(host));
+                // fflush(stdout);
+                // printf("CP0\n");
+                // fflush(stdout);
+                Rio_writen(clientConnfd, clientToReceive, strlen(clientToReceive) + 1);
+                // printf("CP2\n");
+                Close(clientConnfd);
+                return NULL;
+            }
+
+
+            strcpy(resourceToRequest, strpbrk(host, "/"));
+
+            strcat(serverToSend, "GET ");
+            strcat(serverToSend, resourceToRequest);
+            strcat(serverToSend, " HTTP/1.0\r\n");
+
+            *strpbrk(host, "/") = 0;
+
+            strcat(serverToSend, "Host: ");
+            strcat(serverToSend, host);
+            strcat(serverToSend, "\r\n");
+
+
+            strcat(serverToSend, user_agent_hdr);
+
+            strcat(serverToSend, "Connection: close\r\n");
+            strcat(serverToSend, "Proxy-Connection: close\r\n");
+
+
+            firstLine = 0;
+        } else {
+            if (!strstr(clientBuffer, "Proxy-Connection: ") && 
+                !strstr(clientBuffer, "Connection: ") && !strstr(clientBuffer, "Host: ")) {
+
+                    if((oldHttp = strstr(clientBuffer, "HTTP/1.1"))) {
+				        strncpy(oldHttp, "HTTP/1.0", strlen("HTTP/1.0") + 1);
+			        }
+
+                    strcat(serverToSend, clientBuffer);
+                }
+        }
+
+
+    }
+
+
+    // Close HTTP request with empty blank line
+    strcat(serverToSend, "\r\n");
+    
+
+    int tinyClientFd;
+    char* t;
+    if ((t = strpbrk(host, ":"))) {
+        *t = 0;
+        tinyClientFd = Open_clientfd(host, t+1);
+        *t = ':';
+    } else {
+        tinyClientFd = Open_clientfd(host, "80");
+    }
+
 
     // For reading response from tiny
     rio_t trio = {};
     Rio_readinitb(&trio, tinyClientFd);
 
-    // HTTP requests always start with GET, so we will process that first
-    Rio_readlineb(&rio, clientBuffer, MAXLINE);
-    strcat(serverToSend, get_hdr_n);
-
-    // To get requested resource, look for string after third slash in URL
-    int slashCount = 0;
-    int i = 0;
-    int start;
-    int end;
-
-    // Iterate over buffer
-    while (clientBuffer[i]) {
-        // If we have seen 3 slahes, then the URL portion is complete, break
-        if (clientBuffer[i] == ' ' && slashCount == 3) {
-            end = i;
-            break;
-        }
-
-        // Count number of slahes seen, resource start is after third
-        if (clientBuffer[i] == '/') {
-            slashCount++;
-            if (slashCount == 3) {
-                start = i;
-            }
-        }
-        i++;
-    }
-
-    // Allocate new space for the resource string, ensuring space for null terminator
-    char* reso = malloc(end - start + 1);
-    memset(reso, 0, end - start + 1);
-
-    // Copy string into new space, concat to 'serverToSend' string and free original space
-    memcpy(reso, &clientBuffer[start], end-start);
-    strcat(serverToSend, reso);
-    Free(reso);
-
-    // Add final concluding string for GET request
-    strcat(serverToSend, http_prot_hdr);
-
-    // Concatenate all other necessary configs that were stored statically
-    strcat(serverToSend, host);
-    strcat(serverToSend, user_agent_hdr);
-    strcat(serverToSend, conn_hdr);
-    strcat(serverToSend, prox_conn_hdr);
-
-    // Load all other non-mandatory settings into serverToSend buffer
-    while((Rio_readlineb(&rio, clientBuffer, MAXLINE)) > 2) {
-        if (!isHost(clientBuffer) && !isUsrAgent(clientBuffer) && !isConn(clientBuffer) && !isProxConn(clientBuffer)) {
-            strcat(serverToSend, clientBuffer);
-        }
-    }
-    
-    // Close HTTP request with empty blank line
-    strcat(serverToSend, "\r\n");
-    
+    // printf("here is what we are sending\n");
+    // printf(serverToSend);
+    // printf("\n");
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
     Rio_writen(tinyClientFd, serverToSend, MAXLINE);
 
-
+    int ssize;
     // Read response from tiny into serverBuffer, then directly into buffer to send back to client
-    while (Rio_readlineb(&trio, serverBuffer, MAXLINE)) {
+    while ((ssize = Rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
+        // printf("Loop here how many times?\n");
+        // printf(serverBuffer);
+        // printf("\n");
+        Rio_writen(clientConnfd, serverBuffer, ssize);
         strcat(clientToReceive, serverBuffer);
     }
 
+    printf("See this\n");
+    printf(host);
+    printf("\n");
+    printf(resourceToRequest);
+    printf("\n");
+    printf("\n");
+
+    printf("Concatenated it is:\n");
+    strcat(host, resourceToRequest);
+    printf(host);
+    printf("\n");
+    addResource(host, clientToReceive);
+
+    // printf("This is what we are sending back to the client!\n");
+    // printf(clientToReceive);
+
     // Write response back to client
-    Rio_writen(connfd, clientToReceive, MAXLINE);
+    // Rio_writen(clientConnfd, clientToReceive, MAXLINE);
 
     // Close client and Tiny connection
-    Close(connfd);
     Close(tinyClientFd);
+    Close(clientConnfd);
     return NULL;
 }
 
 
-// Check if string in buffer was specifying Host
-int isHost(char* clientBuffer) {
-    return clientBuffer[0] == 'H' && clientBuffer[1] == 'o' && clientBuffer[2] == 's' && clientBuffer[3] == 't';
-}
 
 // Check if string in buffer was specifying User-Agent
 int isUsrAgent(char* clientBuffer) {
