@@ -2,10 +2,7 @@
 #include "csapp.h"
 #include "cache.h"
 
-// Storing All settings that we know that we have to send
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
-
-static char* tinyPortString;
 
 void* handleRequest(void* vargp);
 
@@ -22,12 +19,6 @@ int main(int argc, char **argv)
     // Capture port as String as well as replacement policy, 1 for LRU, 0 for LFU
     char* port = argv[1];
     replacement_policy = (argv[2][1] == 'R');
-
-    // Convert String port to Tiny Port to Listen to
-    int tinyPort = atoi(port) + 1;
-    int length = snprintf(NULL, 0, "%d", tinyPort);
-    tinyPortString = malloc(length + 1);
-    snprintf(tinyPortString, length + 1, "%d", tinyPort);
 
     // Open listening instance to port
     int listenfd = Open_listenfd(port);
