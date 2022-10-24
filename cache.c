@@ -6,8 +6,9 @@
 
 
 int findResource(char* queryKey, char* bufferToFill) {
-    // pthread_rwlock_rdlock(&lock);
+    pthread_rwlock_rdlock(&lock);
     if (!head) {
+        pthread_rwlock_unlock(&lock);
         return 0;
     }
 
@@ -23,34 +24,33 @@ int findResource(char* queryKey, char* bufferToFill) {
             strcat(bufferToFill, curr->html);
 
             if (replacement_policy) {
-                cached_obj* currPrev = curr->prev;
-                cached_obj* currNext = curr->next;
+                curr->lfuCount = globalTime++;
+                // cached_obj* currPrev = curr->prev;
+                // cached_obj* currNext = curr->next;
 
-                curr->prev = NULL;
-                curr->next = head;
+                // curr->prev = NULL;
+                // curr->next = head;
 
-                if (currPrev) {
-                    currPrev->next = currNext;
-                }
-                if (currNext) {
-                    currNext->prev = currPrev;
-                }
+                // if (currPrev) {
+                //     currPrev->next = currNext;
+                // }
+                // if (currNext) {
+                //     currNext->prev = currPrev;
+                // }
 
-                head = curr;
+                // head = curr;
 
             } else {
                 curr->lfuCount++;
             }
-            // pthread_rwlock_unlock(&lock);
             
-            // pthread_rwlock_unlock(&lock);
+            pthread_rwlock_unlock(&lock);
             return 1;
-            // return toReturn;
         }
 
         curr = curr->next;
     }
-    // pthread_rwlock_unlock(&lock);
+    pthread_rwlock_unlock(&lock);
     return 0;
 }
 
@@ -68,14 +68,14 @@ int addResource(char* queryKey, char* htmlToStore) {
     // Using a write lock to ensure safety 
     pthread_rwlock_wrlock(&lock);
     while (cacheSize + sizeToAdd > MAX_CACHE_SIZE) {
-        if (replacement_policy) {
-            Free(end->key);
-            Free(end->html);
-            cacheSize -= end->size;
-            cached_obj* newEnd = end->prev;
-            Free(end);
-            end = newEnd;
-        } else {
+        // if (replacement_policy) {
+        //     Free(end->key);
+        //     Free(end->html);
+        //     cacheSize -= end->size;
+        //     cached_obj* newEnd = end->prev;
+        //     Free(end);
+        //     end = newEnd;
+        // } else {
             cached_obj* curr = head;
 
             int min = curr->lfuCount;
@@ -90,8 +90,12 @@ int addResource(char* queryKey, char* htmlToStore) {
                 curr = curr->next;
             }
 
+            // TODO FREE TOREMOVE
             cached_obj* toRemovePrev = toRemove->prev;
             cached_obj* toRemoveNext = toRemove->next;
+
+            Free(toRemove->key);
+            Free(toRemove->html);
 
             if (toRemovePrev) {
                 toRemovePrev->next = toRemoveNext;
@@ -101,7 +105,9 @@ int addResource(char* queryKey, char* htmlToStore) {
             }
 
             cacheSize -= toRemove->size;
-        }
+
+            Free(toRemove);
+        // }
         
     }
     // Undo lock temporarily as we prepare new cache object
@@ -118,23 +124,25 @@ int addResource(char* queryKey, char* htmlToStore) {
     cached_obj* newCacheObj = malloc(sizeof(cached_obj));
     newCacheObj->key = newKeyLoc;
     newCacheObj->html = newHTMLLoc;
-    newCacheObj->lfuCount = 0;
+
+    if (replacement_policy) {
+        newCacheObj->lfuCount = globalTime++;
+    } else {
+        newCacheObj->lfuCount = 0;
+    }
+    
     newCacheObj->size = sizeToAdd;
     newCacheObj->htmlSize = strlen(htmlToStore) + 1;
     newCacheObj->prev = NULL;
-    newCacheObj->next = head;
 
-    // Add to front of Cache, with Write lock since we are doing a modification
     pthread_rwlock_wrlock(&lock);
+    newCacheObj->next = head;
+    // Add to front of Cache, with Write lock since we are doing a modification
+
     cacheSize += sizeToAdd;
 
     // Updating header element as necessary
-    if (!head) {
-        head = newCacheObj;
-        end = newCacheObj;
-    } else {
-        head = newCacheObj;
-    }
+    head = newCacheObj;
     pthread_rwlock_unlock(&lock);
     
     printf("String was added in Cache!\n");
