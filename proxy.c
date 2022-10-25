@@ -56,7 +56,7 @@ void* handleRequest(void* vargp) {
     char clientBuffer[MAXLINE] = "";
     char serverBuffer[MAXLINE] = "";
     char serverToSend[MAXLINE] = "";
-    char toCacheHTML[MAXLINE] = "";
+    char toCacheHTML[MAX_OBJECT_SIZE] = "";
 
     // For reading request from client
     rio_t rio = {};
@@ -98,8 +98,8 @@ void* handleRequest(void* vargp) {
 
             // If the host & resource is cached, just send it back
             if (findResource(domainPortSplit, toCacheHTML)) {
-                printf("Looking for the following Resource\n");
-                printf(domainPortSplit);
+                printf("Returned the following:\n");
+                printf(toCacheHTML);
                 printf("\n");
                 Rio_writen(clientConnfd, toCacheHTML, strlen(toCacheHTML) + 1);
                 Close(clientConnfd);
@@ -148,8 +148,7 @@ void* handleRequest(void* vargp) {
     // Close HTTP request with empty blank line
     strcat(serverToSend, "\r\n");
 
-    printf("Will send the following\n");
-    printf(serverToSend);
+    printf("Built the message to send to the server\n");
     
     // Because no cache, we have to open a sever connection
     int endServerFd;
@@ -164,6 +163,8 @@ void* handleRequest(void* vargp) {
         endServerFd = open_clientfd(domainPortSplit, "80");
     }
 
+    printf("Got the server connector\n");
+
     if (endServerFd < 0) {
         printf("Couldn't establish a connection to the Server!\n");
         returnErrortoClient(clientConnfd);
@@ -175,14 +176,32 @@ void* handleRequest(void* vargp) {
     rio_t trio = {};
     Rio_readinitb(&trio, endServerFd);
 
+    printf("Will send the following\n");
+    printf(serverToSend);
+
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
     Rio_writen(endServerFd, serverToSend, MAXLINE);
 
+    printf("Sent message to server\n");
+
     int ssize;
+    int nsize = 0;
+
+    int full = 1;
     // Read response from server into serverBuffer, then directly into buffer to send back to client
-    while ((ssize = rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
+    while ((ssize = rio_readnb(&trio, serverBuffer, MAX_OBJECT_SIZE)) > 0) {
+        printf("Got inside read loop\n");
         Rio_writen(clientConnfd, serverBuffer, ssize);
-        strcat(toCacheHTML, serverBuffer);
+
+        if (full && ssize + nsize < MAX_OBJECT_SIZE) {
+            nsize += ssize;
+            strcat(toCacheHTML, serverBuffer);
+        } else {
+            full = 0;
+        }
+
+        // strcat(toCacheHTML, serverBuffer);
+        printf("%i\n", ssize);
     }
 
     printf("This is what we returned\n");
@@ -191,7 +210,14 @@ void* handleRequest(void* vargp) {
 
     // Create a valid key by re-concatenation of host name, and with server buffer
     strcat(domainPortSplit, resourceToRequest);
-    addResource(domainPortSplit, toCacheHTML);
+
+    printf("Got a full key\n");
+
+    if (full) {
+        addResource(domainPortSplit, toCacheHTML, nsize);
+        printf("Added to Cache\n");
+    }
+    
 
     // Close client and Tiny connection
     Close(endServerFd);

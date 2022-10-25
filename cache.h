@@ -24,7 +24,7 @@ struct cached_obj {
 
 // Declare function for reading, and writing
 int findResource(char* queryKey, char* bufferToFill);
-int addResource(char* queryKey, char* htmlToStore);
+int addResource(char* queryKey, char* htmlToStore, int hmtlSize);
 
 // Keep track of actaul Cache in global variable
 static cached_obj* head;

@@ -42,7 +42,7 @@ int findResource(char* queryKey, char* bufferToFill) {
 /*
 * Adds a resource, K,V pair to the front of the Cache, ensuring size conditions
 */
-int addResource(char* queryKey, char* htmlToStore) {
+int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     // Make sure size fits criteria
     int sizeToAdd = strlen(queryKey) + strlen(htmlToStore) + 2;
     if (sizeToAdd > MAX_OBJECT_SIZE) {
