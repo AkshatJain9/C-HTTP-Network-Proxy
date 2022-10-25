@@ -15,7 +15,7 @@ typedef struct cached_obj cached_obj;
 struct cached_obj {
     char* key;
     void* html;
-    int lfuCount;
+    int replacementMetric;
     int size;
     cached_obj* prev;
     cached_obj* next;
@@ -27,7 +27,6 @@ int addResource(char* queryKey, char* htmlToStore, int hmtlSize);
 
 // Keep track of actaul Cache in global variable
 static cached_obj* head;
-// static cached_obj* end;
 
 // Meta-variables to keep track of size, LRU or LFU and an overall P-Thread lock
 static int cacheSize = 0;

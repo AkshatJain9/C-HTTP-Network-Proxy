@@ -4,29 +4,31 @@
 #include "csapp.h"
 #include "cache.h"
 
-
+/*
+*  Given a Query Key, will fill the provided buffer if the resource is in the Cache
+*/
 int findResource(char* queryKey, void* bufferToFill) {
+    // Set a read lock only, so multiple clients can access it
     pthread_rwlock_rdlock(&lock);
     if (!head) {
         pthread_rwlock_unlock(&lock);
         return 0;
     }
 
+    // Search through each node in the linked list to find a matching key
     cached_obj* curr = head;
 
-    // printf("Looking for: %s\n", queryKey);
-
     while (curr) {
-        // printf("Current node has: %s\n", curr->key);
         if (!strcmp(queryKey, curr->key)) {
+            // If there was a Cache hit, fill the buffer, and update the Replacement Metric
             printf("There was a cache hit!\n");
-
             memcpy(bufferToFill, curr->html, curr->size);
 
+            // For LRU it is the time, for LFU it is the count
             if (replacement_policy) {
-                curr->lfuCount = globalTime++;
+                curr->replacementMetric = globalTime++;
             } else {
-                curr->lfuCount++;
+                curr->replacementMetric++;
             }
             
             pthread_rwlock_unlock(&lock);
@@ -35,6 +37,8 @@ int findResource(char* queryKey, void* bufferToFill) {
 
         curr = curr->next;
     }
+
+    // Always unlocking before returning to ensure no deadlocks
     pthread_rwlock_unlock(&lock);
     return 0;
 }
@@ -44,7 +48,6 @@ int findResource(char* queryKey, void* bufferToFill) {
 */
 int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     // Make sure size fits criteria
-    // int sizeToAdd = strlen(queryKey) + strlen(htmlToStore) + 2;
     if (htmlSize > MAX_OBJECT_SIZE) {
         return 0;
     }
@@ -55,24 +58,27 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     while (cacheSize + htmlSize > MAX_CACHE_SIZE) {
             cached_obj* curr = head;
 
-            int min = curr->lfuCount;
+            // Keep track of most approiate to remove so far
+            int min = curr->replacementMetric;
             cached_obj* toRemove = head;
 
+            // For each element, see if Metric is beaten, if so, replace toRemove
             while (curr) {
-                if (curr->lfuCount < min) {
-                    min = curr->lfuCount;
+                if (curr->replacementMetric < min) {
+                    min = curr->replacementMetric;
                     toRemove = curr;
                 }
 
                 curr = curr->next;
             }
 
-            cached_obj* toRemovePrev = toRemove->prev;
-            cached_obj* toRemoveNext = toRemove->next;
-
+            // Free up space on heap
             Free(toRemove->key);
             Free(toRemove->html);
 
+            // Update next and previous pointers for integrity
+            cached_obj* toRemovePrev = toRemove->prev;
+            cached_obj* toRemoveNext = toRemove->next;
             if (toRemovePrev) {
                 toRemovePrev->next = toRemoveNext;
             }
@@ -80,18 +86,20 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
                 toRemoveNext->prev = toRemovePrev;
             }
 
+            // Update size and formally remove Cache entry
             cacheSize -= toRemove->size;
-
             Free(toRemove);
         
     }
-    // Undo lock temporarily as we prepare new cache object
+
+    // Undo lock temporarily as we prepare new Cache object
     pthread_rwlock_unlock(&lock);
 
     // Allocate new memory locations on heap to copy strings
     char* newKeyLoc = calloc(strlen(queryKey) + 1, 1);
     void* newHTMLLoc = calloc(htmlSize + 1, 1);
 
+    // Because proxy temporarily stores fields, copy them over to heap
     strcpy(newKeyLoc, queryKey);
     memcpy(newHTMLLoc, htmlToStore, htmlSize);
 
@@ -100,19 +108,19 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     newCacheObj->key = newKeyLoc;
     newCacheObj->html = newHTMLLoc;
 
+    // Initialise according to replacement policy
     if (replacement_policy) {
-        newCacheObj->lfuCount = globalTime++;
+        newCacheObj->replacementMetric = globalTime++;
     } else {
-        newCacheObj->lfuCount = 0;
+        newCacheObj->replacementMetric = 0;
     }
     
     newCacheObj->size = htmlSize;
     newCacheObj->prev = NULL;
-
+    
+    // Add to front of Cache, with Write lock since we are doing a modification
     pthread_rwlock_wrlock(&lock);
     newCacheObj->next = head;
-    // Add to front of Cache, with Write lock since we are doing a modification
-
     cacheSize += htmlSize;
 
     // Updating header element as necessary
