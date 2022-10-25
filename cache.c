@@ -5,7 +5,7 @@
 #include "cache.h"
 
 
-int findResource(char* queryKey, char* bufferToFill) {
+int findResource(char* queryKey, void* bufferToFill) {
     pthread_rwlock_rdlock(&lock);
     if (!head) {
         pthread_rwlock_unlock(&lock);
@@ -21,7 +21,7 @@ int findResource(char* queryKey, char* bufferToFill) {
         if (!strcmp(queryKey, curr->key)) {
             printf("There was a cache hit!\n");
 
-            strcat(bufferToFill, curr->html);
+            memcpy(bufferToFill, curr->html, curr->size);
 
             if (replacement_policy) {
                 curr->lfuCount = globalTime++;
@@ -44,15 +44,15 @@ int findResource(char* queryKey, char* bufferToFill) {
 */
 int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     // Make sure size fits criteria
-    int sizeToAdd = strlen(queryKey) + strlen(htmlToStore) + 2;
-    if (sizeToAdd > MAX_OBJECT_SIZE) {
+    // int sizeToAdd = strlen(queryKey) + strlen(htmlToStore) + 2;
+    if (htmlSize > MAX_OBJECT_SIZE) {
         return 0;
     }
 
     // Remove elements according the LRU/LFU policy until everything fits
     // Using a write lock to ensure safety 
     pthread_rwlock_wrlock(&lock);
-    while (cacheSize + sizeToAdd > MAX_CACHE_SIZE) {
+    while (cacheSize + htmlSize > MAX_CACHE_SIZE) {
             cached_obj* curr = head;
 
             int min = curr->lfuCount;
@@ -90,10 +90,10 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
 
     // Allocate new memory locations on heap to copy strings
     char* newKeyLoc = calloc(strlen(queryKey) + 1, 1);
-    char* newHTMLLoc = calloc(strlen(htmlToStore) + 1, 1);
+    void* newHTMLLoc = calloc(htmlSize + 1, 1);
 
     strcpy(newKeyLoc, queryKey);
-    strcpy(newHTMLLoc, htmlToStore);
+    memcpy(newHTMLLoc, htmlToStore, htmlSize);
 
     // Set fields correctly
     cached_obj* newCacheObj = malloc(sizeof(cached_obj));
@@ -106,15 +106,14 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
         newCacheObj->lfuCount = 0;
     }
     
-    newCacheObj->size = sizeToAdd;
-    newCacheObj->htmlSize = strlen(htmlToStore) + 1;
+    newCacheObj->size = htmlSize;
     newCacheObj->prev = NULL;
 
     pthread_rwlock_wrlock(&lock);
     newCacheObj->next = head;
     // Add to front of Cache, with Write lock since we are doing a modification
 
-    cacheSize += sizeToAdd;
+    cacheSize += htmlSize;
 
     // Updating header element as necessary
     head = newCacheObj;

@@ -56,7 +56,8 @@ void* handleRequest(void* vargp) {
     char clientBuffer[MAXLINE] = "";
     char serverBuffer[MAXLINE] = "";
     char serverToSend[MAXLINE] = "";
-    char toCacheHTML[MAX_OBJECT_SIZE] = "";
+    void* toCacheHTML = calloc(MAX_OBJECT_SIZE, 1);
+    // void toCacheHTML[MAX_OBJECT_SIZE] = "";
 
     // For reading request from client
     rio_t rio = {};
@@ -101,7 +102,7 @@ void* handleRequest(void* vargp) {
                 printf("Returned the following:\n");
                 printf(toCacheHTML);
                 printf("\n");
-                Rio_writen(clientConnfd, toCacheHTML, strlen(toCacheHTML) + 1);
+                Rio_writen(clientConnfd, toCacheHTML, MAX_OBJECT_SIZE);
                 Close(clientConnfd);
                 return NULL;
             }
@@ -189,13 +190,13 @@ void* handleRequest(void* vargp) {
 
     int full = 1;
     // Read response from server into serverBuffer, then directly into buffer to send back to client
-    while ((ssize = rio_readnb(&trio, serverBuffer, MAX_OBJECT_SIZE)) > 0) {
+    while ((ssize = rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
         printf("Got inside read loop\n");
         Rio_writen(clientConnfd, serverBuffer, ssize);
 
         if (full && ssize + nsize < MAX_OBJECT_SIZE) {
+            memcpy(toCacheHTML + nsize, serverBuffer, ssize);
             nsize += ssize;
-            strcat(toCacheHTML, serverBuffer);
         } else {
             full = 0;
         }
@@ -218,6 +219,7 @@ void* handleRequest(void* vargp) {
         printf("Added to Cache\n");
     }
     
+    Free(toCacheHTML);
 
     // Close client and Tiny connection
     Close(endServerFd);

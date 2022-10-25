@@ -14,16 +14,15 @@
 typedef struct cached_obj cached_obj;
 struct cached_obj {
     char* key;
-    char* html;
+    void* html;
     int lfuCount;
     int size;
-    int htmlSize;
     cached_obj* prev;
     cached_obj* next;
 };
 
 // Declare function for reading, and writing
-int findResource(char* queryKey, char* bufferToFill);
+int findResource(char* queryKey, void* bufferToFill);
 int addResource(char* queryKey, char* htmlToStore, int hmtlSize);
 
 // Keep track of actaul Cache in global variable
