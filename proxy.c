@@ -2,9 +2,11 @@
 #include "csapp.h"
 #include "cache.h"
 
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
+static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
 
 void* handleRequest(void* vargp);
+void returnErrortoClient(int fd);
+
 
 // Generated Port 29722 for proxy 29723 for tiny
 int main(int argc, char **argv)
@@ -75,10 +77,30 @@ void* handleRequest(void* vargp) {
         if (firstLine) {
             // Seperate into method and URL, and get just the host
             sscanf(clientBuffer, "%s %s", HTTPMethod, URL);
+
+            if (strcmp("GET", HTTPMethod)) {
+                printf(HTTPMethod);
+                printf("\n");
+                printf("Proxy only Implements GET Method, please try again!\n");
+                // returnErrortoClient(clientConnfd);
+                returnErrortoClient(clientConnfd);
+                return NULL;
+            }
+
+            if (!strstr(URL, "http://")) {
+                printf("URL to be requested must be HTTP!\n");
+                // returnErrortoClient(clientConnfd);
+                returnErrortoClient(clientConnfd);
+                return NULL;
+            }
+
             sscanf(URL, "http://%s", domainPortSplit);
 
             // If the host & resource is cached, just send it back
             if (findResource(domainPortSplit, toCacheHTML)) {
+                printf("Looking for the following Resource\n");
+                printf(domainPortSplit);
+                printf("\n");
                 Rio_writen(clientConnfd, toCacheHTML, strlen(toCacheHTML) + 1);
                 Close(clientConnfd);
                 return NULL;
@@ -125,6 +147,9 @@ void* handleRequest(void* vargp) {
 
     // Close HTTP request with empty blank line
     strcat(serverToSend, "\r\n");
+
+    printf("Will send the following\n");
+    printf(serverToSend);
     
     // Because no cache, we have to open a sever connection
     int endServerFd;
@@ -133,10 +158,17 @@ void* handleRequest(void* vargp) {
     // Open by specified port, otherwise default on port 80
     if ((t = strpbrk(domainPortSplit, ":"))) {
         *t = 0;
-        endServerFd = Open_clientfd(domainPortSplit, t+1);
+        endServerFd = open_clientfd(domainPortSplit, t + 1);
         *t = ':';
     } else {
-        endServerFd = Open_clientfd(domainPortSplit, "80");
+        endServerFd = open_clientfd(domainPortSplit, "80");
+    }
+
+    if (endServerFd < 0) {
+        printf("Couldn't establish a connection to the Server!\n");
+        returnErrortoClient(clientConnfd);
+
+        return NULL;
     }
 
     // For reading response from the server
@@ -148,10 +180,14 @@ void* handleRequest(void* vargp) {
 
     int ssize;
     // Read response from server into serverBuffer, then directly into buffer to send back to client
-    while ((ssize = Rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
+    while ((ssize = rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
         Rio_writen(clientConnfd, serverBuffer, ssize);
         strcat(toCacheHTML, serverBuffer);
     }
+
+    printf("This is what we returned\n");
+    printf(toCacheHTML);
+    printf("\n");
 
     // Create a valid key by re-concatenation of host name, and with server buffer
     strcat(domainPortSplit, resourceToRequest);
@@ -161,4 +197,24 @@ void* handleRequest(void* vargp) {
     Close(endServerFd);
     Close(clientConnfd);
     return NULL;
+}
+
+
+void returnErrortoClient(int fd) 
+{
+
+	char header[MAXLINE], body[MAXLINE];
+
+	/* Build the HTTP response body */
+	sprintf(body, "<html><title>Server Error</title>");
+	sprintf(body, "%s400: Invalid Request\r\n", body);
+
+	/* Print the HTTP response */
+	sprintf(header, "HTTP/1.0 400 Invalid Request\r\n");
+	Rio_writen(fd, header, strlen(header));
+	sprintf(header, "Content-type: text/html\r\n");
+	Rio_writen(fd, header, strlen(header));
+	sprintf(header, "Content-length: %d\r\n\r\n", (int)strlen(body));
+	Rio_writen(fd, header, strlen(header));
+	Rio_writen(fd, body, strlen(body));
 }

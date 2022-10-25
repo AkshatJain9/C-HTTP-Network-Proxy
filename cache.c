@@ -25,21 +25,6 @@ int findResource(char* queryKey, char* bufferToFill) {
 
             if (replacement_policy) {
                 curr->lfuCount = globalTime++;
-                // cached_obj* currPrev = curr->prev;
-                // cached_obj* currNext = curr->next;
-
-                // curr->prev = NULL;
-                // curr->next = head;
-
-                // if (currPrev) {
-                //     currPrev->next = currNext;
-                // }
-                // if (currNext) {
-                //     currNext->prev = currPrev;
-                // }
-
-                // head = curr;
-
             } else {
                 curr->lfuCount++;
             }
@@ -68,14 +53,6 @@ int addResource(char* queryKey, char* htmlToStore) {
     // Using a write lock to ensure safety 
     pthread_rwlock_wrlock(&lock);
     while (cacheSize + sizeToAdd > MAX_CACHE_SIZE) {
-        // if (replacement_policy) {
-        //     Free(end->key);
-        //     Free(end->html);
-        //     cacheSize -= end->size;
-        //     cached_obj* newEnd = end->prev;
-        //     Free(end);
-        //     end = newEnd;
-        // } else {
             cached_obj* curr = head;
 
             int min = curr->lfuCount;
@@ -90,7 +67,6 @@ int addResource(char* queryKey, char* htmlToStore) {
                 curr = curr->next;
             }
 
-            // TODO FREE TOREMOVE
             cached_obj* toRemovePrev = toRemove->prev;
             cached_obj* toRemoveNext = toRemove->next;
 
@@ -107,7 +83,6 @@ int addResource(char* queryKey, char* htmlToStore) {
             cacheSize -= toRemove->size;
 
             Free(toRemove);
-        // }
         
     }
     // Undo lock temporarily as we prepare new cache object
