@@ -3,11 +3,12 @@
 #include "cache.h"
 #include "sbuf.h"
 
+// Shared Buffer Attributes
 #define NTHREADS 4
 #define SBUFSIZE 16
+sbuf_t sbuf;
 
 static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
-sbuf_t sbuf;
 
 void* handleRequest(int clientConnfd);
 void returnErrortoClient(int fd);
@@ -32,49 +33,48 @@ int main(int argc, char **argv)
     int listenfd = Open_listenfd(port);
 
     // For a specific client, we store clientConnfd and store info in addr
-    
     struct sockaddr_storage clientaddr;
     unsigned int clientlen = sizeof(struct sockaddr_storage);
     
     // We also need a thread variable to initialise threads and a lock
     pthread_t tid;
     pthread_rwlock_init(&lock, 0);
-
+    
+    // Initialise Shared Buffer
     sbuf_init(&sbuf, SBUFSIZE);
 
+    // Create threads to pull from shared buffer
     for (int i = 0; i < NTHREADS; i++) {
         Pthread_create(&tid, NULL, thread, NULL);  
     }
-	    
-
+	
+    // Add client connection Fd's to shared buffer to be pulled
     int clientConnfd;
     while (1) {
         // Accepting listening
-        // clientConnfd = malloc(sizeof(int));
         clientConnfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
         sbuf_insert(&sbuf, clientConnfd);
-        // Pthread_create(&tid, NULL, handleRequest, clientConnfd);
     }
     
     return 0;
 }
 
+/*
+*  Thread routing to pull client Fd's from shared buffer and start response routine
+*/
 void* thread(void* vargp) {
     Pthread_detach(pthread_self());
     while (1) {
-        int t = sbuf_remove(&sbuf);
-        handleRequest(t);
+        int clientConnfd = sbuf_remove(&sbuf);
+        handleRequest(clientConnfd);
     }
-
+    return NULL;
 }
 
-
+/*
+*  Routine to handle a request from a client, and to return a response
+*/
 void* handleRequest(int clientConnfd) {
-    // Create connections and detach from main thread
-    // int clientConnfd = *((int*) vargp);
-    // // Pthread_detach(pthread_self());
-    // Free(vargp);
-
     // Initialise buffers for reading and writing from client & tiny
     char clientBuffer[MAXLINE] = "";
     char serverBuffer[MAXLINE] = "";
@@ -195,7 +195,7 @@ void* handleRequest(int clientConnfd) {
     Rio_readinitb(&trio, endServerFd);
 
     printf("This is what we are sending:\n\n");
-    printf(serverToSend);
+    printf("%s\n", serverToSend);
 
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
     Rio_writen(endServerFd, serverToSend, MAXLINE);
@@ -239,9 +239,7 @@ void* handleRequest(int clientConnfd) {
 /*
 * Given a client's FD, returns a web-page stating the request was incorrect
 */
-void returnErrortoClient(int fd) 
-{
-
+void returnErrortoClient(int fd) {
 	char header[MAXLINE], body[MAXLINE];
 
 	/* Build the HTTP response body */
