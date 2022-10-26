@@ -1,11 +1,17 @@
 #include <stdio.h>
 #include "csapp.h"
 #include "cache.h"
+#include "sbuf.h"
+
+#define NTHREADS 4
+#define SBUFSIZE 16
 
 static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
+sbuf_t sbuf;
 
-void* handleRequest(void* vargp);
+void* handleRequest(int clientConnfd);
 void returnErrortoClient(int fd);
+void* thread(void* vargp);
 
 
 // Generated Port 29722
@@ -26,7 +32,7 @@ int main(int argc, char **argv)
     int listenfd = Open_listenfd(port);
 
     // For a specific client, we store clientConnfd and store info in addr
-    int* clientConnfd;
+    
     struct sockaddr_storage clientaddr;
     unsigned int clientlen = sizeof(struct sockaddr_storage);
     
@@ -34,23 +40,40 @@ int main(int argc, char **argv)
     pthread_t tid;
     pthread_rwlock_init(&lock, 0);
 
+    sbuf_init(&sbuf, SBUFSIZE);
+
+    for (int i = 0; i < NTHREADS; i++) {
+        Pthread_create(&tid, NULL, thread, NULL);  
+    }
+	    
+
+    int clientConnfd;
     while (1) {
         // Accepting listening
-        clientConnfd = malloc(sizeof(int));
-        *clientConnfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
-
-        Pthread_create(&tid, NULL, handleRequest, clientConnfd);
+        // clientConnfd = malloc(sizeof(int));
+        clientConnfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
+        sbuf_insert(&sbuf, clientConnfd);
+        // Pthread_create(&tid, NULL, handleRequest, clientConnfd);
     }
     
     return 0;
 }
 
-
-void* handleRequest(void* vargp) {
-    // Create connections and detach from main thread
-    int clientConnfd = *((int*) vargp);
+void* thread(void* vargp) {
     Pthread_detach(pthread_self());
-    Free(vargp);
+    while (1) {
+        int t = sbuf_remove(&sbuf);
+        handleRequest(t);
+    }
+
+}
+
+
+void* handleRequest(int clientConnfd) {
+    // Create connections and detach from main thread
+    // int clientConnfd = *((int*) vargp);
+    // // Pthread_detach(pthread_self());
+    // Free(vargp);
 
     // Initialise buffers for reading and writing from client & tiny
     char clientBuffer[MAXLINE] = "";
@@ -130,7 +153,8 @@ void* handleRequest(void* vargp) {
             // If the line isn't any of the template fields, process it
             if (!strstr(clientBuffer, "Proxy-Connection: ") && 
                 !strstr(clientBuffer, "Connection: ") && 
-                !strstr(clientBuffer, "Host: ")) {
+                !strstr(clientBuffer, "Host: ") &&
+                !strstr(clientBuffer, "User-Agent: ")) {
                 
                 // Change to consistent HTTP format and contcatenate
                 if ((oldHttp = strstr(clientBuffer, "HTTP/1.1"))) {
@@ -170,6 +194,9 @@ void* handleRequest(void* vargp) {
     rio_t trio = {};
     Rio_readinitb(&trio, endServerFd);
 
+    printf("This is what we are sending:\n\n");
+    printf(serverToSend);
+
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
     Rio_writen(endServerFd, serverToSend, MAXLINE);
 
@@ -198,7 +225,6 @@ void* handleRequest(void* vargp) {
     if (full) {
         strcat(domainPortSplit, resourceToRequest);
         addResource(domainPortSplit, toCacheHTML, responseSize);
-        printf("Added to Cache\n");
     }
     
     // Because temporary cache was malloced, we free it

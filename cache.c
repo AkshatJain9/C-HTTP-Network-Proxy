@@ -18,6 +18,9 @@ int findResource(char* queryKey, void* bufferToFill) {
     // Search through each node in the linked list to find a matching key
     cached_obj* curr = head;
 
+    printf("Looking for: \n");
+    printf("%s\n", queryKey);
+
     while (curr) {
         if (!strcmp(queryKey, curr->key)) {
             // If there was a Cache hit, fill the buffer, and update the Replacement Metric
@@ -72,18 +75,28 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
                 curr = curr->next;
             }
 
+            printf("Eviciting the followng: %s\n", toRemove->key);
+
             // Free up space on heap
             Free(toRemove->key);
             Free(toRemove->html);
 
-            // Update next and previous pointers for integrity
-            cached_obj* toRemovePrev = toRemove->prev;
-            cached_obj* toRemoveNext = toRemove->next;
-            if (toRemovePrev) {
-                toRemovePrev->next = toRemoveNext;
-            }
-            if (toRemoveNext) {
-                toRemoveNext->prev = toRemovePrev;
+            // If the toRemove is the head, update the head
+            if (head == toRemove) {
+                head = head->next;
+                if (head) {
+                    head->prev = NULL;
+                }
+            } else {
+                // Otherwise just update the next and previous pointers
+                cached_obj* toRemovePrev = toRemove->prev;
+                cached_obj* toRemoveNext = toRemove->next;
+                if (toRemovePrev) {
+                    toRemovePrev->next = toRemoveNext;
+                }
+                if (toRemoveNext) {
+                    toRemoveNext->prev = toRemovePrev;
+                }
             }
 
             // Update size and formally remove Cache entry
@@ -127,7 +140,7 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
     head = newCacheObj;
     pthread_rwlock_unlock(&lock);
     
-    printf("String was added in Cache!\n");
+    printf("%s was added in Cache!\n", queryKey);
     return 1;
 }
 
