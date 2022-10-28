@@ -4,6 +4,12 @@
 #include "csapp.h"
 #include "cache.h"
 
+
+// Keep track of actual Cache and replacement metrics
+static cached_obj* head;
+static int cacheSize = 0;
+static long globalTime = 0;
+
 /*
 *  Given a Query Key, will fill the provided buffer if the resource is in the Cache
 */

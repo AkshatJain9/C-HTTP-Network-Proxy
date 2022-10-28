@@ -4,18 +4,18 @@
 #include "sbuf.h"
 
 // Shared Buffer Attributes
-#define NTHREADS 4
-#define SBUFSIZE 16
+#define NTHREADS 16
+#define SBUFSIZE 20
 sbuf_t sbuf;
 
 static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
 
-void* handleRequest(int clientConnfd);
+void handleRequest(int clientConnfd);
 void returnErrortoClient(int fd);
 void* thread(void* vargp);
 
 
-// Generated Port 29722
+// Generated Port 29722 from "./port-for-user.pl u7284072"
 int main(int argc, char **argv)
 {
     // Check if input is in specified form
@@ -74,7 +74,7 @@ void* thread(void* vargp) {
 /*
 *  Routine to handle a request from a client, and to return a response
 */
-void* handleRequest(int clientConnfd) {
+void handleRequest(int clientConnfd) {
     // Initialise buffers for reading and writing from client & tiny
     char clientBuffer[MAXLINE] = "";
     char serverBuffer[MAXLINE] = "";
@@ -106,14 +106,14 @@ void* handleRequest(int clientConnfd) {
                 printf("Proxy only Implements GET Method, %s was attempted\n", HTTPMethod);
                 returnErrortoClient(clientConnfd);
                 Close(clientConnfd);
-                return NULL;
+                return;
             }
 
             if (!strstr(URL, "http://")) {
                 printf("Protocol to be requested must be HTTP!\n");
                 returnErrortoClient(clientConnfd);
                 Close(clientConnfd);
-                return NULL;
+                return;
             }
 
             // Get just the host, port and resource in its own string
@@ -123,7 +123,7 @@ void* handleRequest(int clientConnfd) {
             if (findResource(domainPortSplit, toCacheHTML)) {
                 Rio_writen(clientConnfd, toCacheHTML, MAX_OBJECT_SIZE);
                 Close(clientConnfd);
-                return NULL;
+                return;
             }
 
             // Copy the resource into its own string
@@ -187,7 +187,7 @@ void* handleRequest(int clientConnfd) {
         printf("Couldn't establish a connection to the Server!\n");
         returnErrortoClient(clientConnfd);
         Close(clientConnfd);
-        return NULL;
+        return;
     }
 
     // For reading response from the server
@@ -233,7 +233,6 @@ void* handleRequest(int clientConnfd) {
     // Close client and Tiny connection
     Close(endServerFd);
     Close(clientConnfd);
-    return NULL;
 }
 
 /*
@@ -244,7 +243,7 @@ void returnErrortoClient(int fd) {
 
 	/* Build the HTTP response body */
 	sprintf(body, "<html><title>Server Error</title>");
-	sprintf(body, "%s400: Invalid Request\r\n", body);
+    strcat(body, "400: Invalid Request\r\n");
 
 	/* Print the HTTP response */
 	sprintf(header, "HTTP/1.0 400 Invalid Request\r\n");

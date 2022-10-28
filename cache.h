@@ -25,11 +25,7 @@ struct cached_obj {
 int findResource(char* queryKey, void* bufferToFill);
 int addResource(char* queryKey, char* htmlToStore, int hmtlSize);
 
-// Keep track of actaul Cache in global variable
-static cached_obj* head;
 
-// Meta-variables to keep track of size, LRU or LFU and an overall P-Thread lock
-static int cacheSize = 0;
+// Meta-variables to keep track of LRU or LFU and an overall P-Thread lock
 static int replacement_policy;
 static pthread_rwlock_t lock;
-static long globalTime = 0;
