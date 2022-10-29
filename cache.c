@@ -61,6 +61,29 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
         return 0;
     }
 
+    // Allocate new memory locations on heap to copy strings
+    char* newKeyLoc = calloc(strlen(queryKey) + 1, 1);
+    void* newHTMLLoc = calloc(htmlSize + 1, 1);
+
+    // Because proxy temporarily stores fields, copy them over to heap
+    strcpy(newKeyLoc, queryKey);
+    memcpy(newHTMLLoc, htmlToStore, htmlSize);
+
+    // Set fields correctly
+    cached_obj* newCacheObj = malloc(sizeof(cached_obj));
+    newCacheObj->key = newKeyLoc;
+    newCacheObj->html = newHTMLLoc;
+
+    // Initialise according to replacement policy
+    if (replacement_policy) {
+        newCacheObj->replacementMetric = globalTime++;
+    } else {
+        newCacheObj->replacementMetric = 0;
+    }
+    
+    newCacheObj->size = htmlSize;
+    newCacheObj->prev = NULL;
+
     // Remove elements according the LRU/LFU policy until everything fits
     // Using a write lock to ensure safety 
     pthread_rwlock_wrlock(&lock);
@@ -110,35 +133,8 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
             Free(toRemove);
         
     }
-
-    // Undo lock temporarily as we prepare new Cache object
-    pthread_rwlock_unlock(&lock);
-
-    // Allocate new memory locations on heap to copy strings
-    char* newKeyLoc = calloc(strlen(queryKey) + 1, 1);
-    void* newHTMLLoc = calloc(htmlSize + 1, 1);
-
-    // Because proxy temporarily stores fields, copy them over to heap
-    strcpy(newKeyLoc, queryKey);
-    memcpy(newHTMLLoc, htmlToStore, htmlSize);
-
-    // Set fields correctly
-    cached_obj* newCacheObj = malloc(sizeof(cached_obj));
-    newCacheObj->key = newKeyLoc;
-    newCacheObj->html = newHTMLLoc;
-
-    // Initialise according to replacement policy
-    if (replacement_policy) {
-        newCacheObj->replacementMetric = globalTime++;
-    } else {
-        newCacheObj->replacementMetric = 0;
-    }
-    
-    newCacheObj->size = htmlSize;
-    newCacheObj->prev = NULL;
     
     // Add to front of Cache, with Write lock since we are doing a modification
-    pthread_rwlock_wrlock(&lock);
     newCacheObj->next = head;
     cacheSize += htmlSize;
 
