@@ -4,7 +4,6 @@
 #include "csapp.h"
 #include "cache.h"
 
-
 // Keep track of actual Cache and replacement metrics
 static cached_obj* head;
 static int cacheSize = 0;
@@ -24,8 +23,7 @@ int findResource(char* queryKey, void* bufferToFill) {
     // Search through each node in the linked list to find a matching key
     cached_obj* curr = head;
 
-    printf("Looking for: \n");
-    printf("%s\n", queryKey);
+    printf("Looking for: %s\n", queryKey);
 
     while (curr) {
         if (!strcmp(queryKey, curr->key)) {

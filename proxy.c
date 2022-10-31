@@ -19,8 +19,7 @@ void* thread(void* vargp);
 int main(int argc, char **argv)
 {
     // Check if input is in specified form
-    if (argc != 3 || strlen(argv[2]) != 3 || argv[2][0] != 'L' || 
-    (argv[2][1] != 'R' && argv[2][1] != 'F') || (argv[2][2] != 'U')) {
+    if (argc != 3 || (strcmp(argv[2], "LRU") && strcmp(argv[2], "LFU"))) {
         fprintf(stderr, "Usage: %s <port> <LRU | LFU>\n", argv[0]);
         exit(-1);
     }
@@ -194,9 +193,6 @@ void handleRequest(int clientConnfd) {
     rio_t trio = {};
     Rio_readinitb(&trio, endServerFd);
 
-    printf("This is what we are sending:\n\n");
-    printf("%s\n", serverToSend);
-
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
     Rio_writen(endServerFd, serverToSend, MAXLINE);
 
@@ -218,7 +214,6 @@ void handleRequest(int clientConnfd) {
         } else {
             full = 0;
         }
-
     }
 
     // If we were able to cache the whole object, make a valid key and place in cache
@@ -250,7 +245,7 @@ void returnErrortoClient(int fd) {
 	Rio_writen(fd, header, strlen(header));
 	sprintf(header, "Content-type: text/html\r\n");
 	Rio_writen(fd, header, strlen(header));
-	sprintf(header, "Content-length: %d\r\n\r\n", (int)strlen(body));
+	sprintf(header, "Content-length: %d\r\n\r\n", (int) strlen(body));
 	Rio_writen(fd, header, strlen(header));
 	Rio_writen(fd, body, strlen(body));
 }
