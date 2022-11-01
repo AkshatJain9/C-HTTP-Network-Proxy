@@ -105,10 +105,6 @@ int addResource(char* queryKey, void* htmlToStore, int htmlSize) {
 
             printf("Eviciting the followng: %s\n", toRemove->key);
 
-            // Free up space on heap
-            Free(toRemove->key);
-            Free(toRemove->html);
-
             // If the toRemove is the head, update the head
             if (head == toRemove) {
                 head = head->next;
@@ -129,7 +125,6 @@ int addResource(char* queryKey, void* htmlToStore, int htmlSize) {
 
             // Update size and formally remove Cache entry
             cacheSize -= toRemove->size;
-            Free(toRemove);
     }
     
     // Add to front of Cache, with Write lock since we are doing a modification
