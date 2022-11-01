@@ -4,14 +4,14 @@
 #include "sbuf.h"
 
 // Shared Buffer Attributes
-#define NTHREADS 16
-#define SBUFSIZE 20
+#define NTHREADS 24
+#define SBUFSIZE 128
 sbuf_t sbuf;
 
 static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36\r\n";
 
 void handleRequest(int clientConnfd);
-void returnErrortoClient(int fd);
+void returnErrortoClient(int fd, char* error_msg);
 void* thread(void* vargp);
 
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     unsigned int clientlen = sizeof(struct sockaddr_storage);
     
     // We also need a thread variable to initialise threads and a lock
-    pthread_t tid;
+    pthread_t tid[NTHREADS];
     pthread_rwlock_init(&lock, 0);
     
     // Initialise Shared Buffer
@@ -44,7 +44,7 @@ int main(int argc, char **argv)
 
     // Create threads to pull from shared buffer
     for (int i = 0; i < NTHREADS; i++) {
-        Pthread_create(&tid, NULL, thread, NULL);  
+        Pthread_create(&tid[i], NULL, thread, NULL);  
     }
 	
     // Add client connection Fd's to shared buffer to be pulled
@@ -93,8 +93,9 @@ void handleRequest(int clientConnfd) {
     // Initialise placeholderr variables
     char* oldHttp;
     int firstLine = 1;
+    int errc;
 
-    while ((Rio_readlineb(&rio, clientBuffer, MAXLINE)) > 2) {
+    while ((errc = rio_readlineb(&rio, clientBuffer, MAXLINE)) > 2) {
         // Firstline is always GET, so we process that first
         if (firstLine) {
             // Seperate into method and URL, and get just the host
@@ -103,14 +104,14 @@ void handleRequest(int clientConnfd) {
             // Check if request is GET and it is a HTTP URL
             if (strcmp("GET", HTTPMethod)) {
                 printf("Proxy only Implements GET Method, %s was attempted\n", HTTPMethod);
-                returnErrortoClient(clientConnfd);
+                returnErrortoClient(clientConnfd, "501 Non-Get Method");
                 Close(clientConnfd);
                 return;
             }
 
             if (!strstr(URL, "http://")) {
                 printf("Protocol to be requested must be HTTP!\n");
-                returnErrortoClient(clientConnfd);
+                returnErrortoClient(clientConnfd, "501 Protocol must be HTTP!");
                 Close(clientConnfd);
                 return;
             }
@@ -120,7 +121,10 @@ void handleRequest(int clientConnfd) {
 
             // If the host & resource is cached, just send it back
             if (findResource(domainPortSplit, toCacheHTML)) {
-                Rio_writen(clientConnfd, toCacheHTML, MAX_OBJECT_SIZE);
+                if (rio_writen(clientConnfd, toCacheHTML, MAX_OBJECT_SIZE) < 0) {
+                    printf("Error returning Cached object\n");
+                    returnErrortoClient(clientConnfd, "500 Error returning Cached object");
+                }
                 Close(clientConnfd);
                 return;
             }
@@ -165,6 +169,12 @@ void handleRequest(int clientConnfd) {
         }
     }
 
+    if (errc < 0) {
+        printf("Error while reading request from Client\n");
+        Close(clientConnfd);
+        return;
+    }
+
     // Close HTTP request with empty blank line
     strcat(serverToSend, "\r\n");
     
@@ -184,7 +194,7 @@ void handleRequest(int clientConnfd) {
     // If request was malformed, we can't continue so return
     if (endServerFd < 0) {
         printf("Couldn't establish a connection to the Server!\n");
-        returnErrortoClient(clientConnfd);
+        returnErrortoClient(clientConnfd, "503 Server Requested Does Not Exist or is Unavailable");
         Close(clientConnfd);
         return;
     }
@@ -194,7 +204,13 @@ void handleRequest(int clientConnfd) {
     Rio_readinitb(&trio, endServerFd);
 
     // Write serverToSend to the tinyClient, meaning send complete HTTP request
-    Rio_writen(endServerFd, serverToSend, MAXLINE);
+    if (rio_writen(endServerFd, serverToSend, MAXLINE) < 0) {
+        printf("Error forwarding request to server\n");
+        returnErrortoClient(clientConnfd, "500 Response could not be sent to server");
+        Close(endServerFd);
+        Close(clientConnfd);
+        return;
+    }
 
     // Keep track of current read's size, as well as overall size
     int currReadSize;
@@ -205,7 +221,13 @@ void handleRequest(int clientConnfd) {
 
     // Read response from server into serverBuffer, then directly into buffer to send back to client
     while ((currReadSize = rio_readnb(&trio, serverBuffer, MAXLINE)) > 0) {
-        Rio_writen(clientConnfd, serverBuffer, currReadSize);
+        if (rio_writen(clientConnfd, serverBuffer, currReadSize) < 0) {
+            printf("Error while sending back response to Client");
+            returnErrortoClient(clientConnfd, "500 Server Stopped Transmitting Response");
+            Close(endServerFd);
+            Close(clientConnfd);
+            return;
+        }
 
         // If we still have room in the cache entry, then add it to the temp entry
         if (full && currReadSize + responseSize < MAX_OBJECT_SIZE) {
@@ -233,12 +255,12 @@ void handleRequest(int clientConnfd) {
 /*
 * Given a client's FD, returns a web-page stating the request was incorrect
 */
-void returnErrortoClient(int fd) {
+void returnErrortoClient(int fd, char* error_msg) {
 	char header[MAXLINE], body[MAXLINE];
 
 	/* Build the HTTP response body */
 	sprintf(body, "<html><title>Server Error</title>");
-    strcat(body, "400: Invalid Request\r\n");
+    sprintf(body, "%s\r\n", error_msg);
 
 	/* Print the HTTP response */
 	sprintf(header, "HTTP/1.0 400 Invalid Request\r\n");

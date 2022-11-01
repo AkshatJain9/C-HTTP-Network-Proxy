@@ -23,7 +23,7 @@ struct cached_obj {
 
 // Declare function for reading, and writing
 int findResource(char* queryKey, void* bufferToFill);
-int addResource(char* queryKey, char* htmlToStore, int hmtlSize);
+int addResource(char* queryKey, void* htmlToStore, int hmtlSize);
 
 
 // Meta-variables to keep track of LRU or LFU and an overall P-Thread lock

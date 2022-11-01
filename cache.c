@@ -38,6 +38,7 @@ int findResource(char* queryKey, void* bufferToFill) {
                 curr->replacementMetric++;
             }
             
+            // Unlock and return success
             pthread_rwlock_unlock(&lock);
             return 1;
         }
@@ -53,15 +54,15 @@ int findResource(char* queryKey, void* bufferToFill) {
 /*
 * Adds a resource, K,V pair to the front of the Cache, ensuring size conditions
 */
-int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
+int addResource(char* queryKey, void* htmlToStore, int htmlSize) {
     // Make sure size fits criteria
     if (htmlSize > MAX_OBJECT_SIZE) {
         return 0;
     }
 
     // Allocate new memory locations on heap to copy strings
-    char* newKeyLoc = calloc(strlen(queryKey) + 1, 1);
-    void* newHTMLLoc = calloc(htmlSize + 1, 1);
+    char* newKeyLoc = calloc(strlen(queryKey) + 10, 1);
+    void* newHTMLLoc = calloc(htmlSize + 10, 1);
 
     // Because proxy temporarily stores fields, copy them over to heap
     strcpy(newKeyLoc, queryKey);
@@ -129,7 +130,6 @@ int addResource(char* queryKey, char* htmlToStore, int htmlSize) {
             // Update size and formally remove Cache entry
             cacheSize -= toRemove->size;
             Free(toRemove);
-        
     }
     
     // Add to front of Cache, with Write lock since we are doing a modification
