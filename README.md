@@ -14,7 +14,7 @@ This proxy can be used with a browser if set in default browser settings.
 
 The proxy has the following features;
 - Dynamic Threadpool for handling concurrent clients using pthreads
-- Usage of reading/writing locks to avoid the readers/writers problem and deadlocks
+- Usage of reading/writing locks to avoid the readers/writers problem whilst avoiding deadlocks
 - Caching in Main Memory using either a Least Frequently Used (LFU) or Least Recently Used (LRU) policy
 - Custom error handling
 - Ability to handle all forms of media
